@@ -17,6 +17,8 @@ cli -s .system.telemetry false
 #
 # Pan/tilt: 24BYJ48 steppers driven directly by GPIO (stock: pan A..D = 47 46 45 44,
 # tilt A..D = 80 79 76 77). gpio-motors reads: horizontal x4, then vertical x4.
+# ptz_control=gpio makes the web UI show the pan/tilt pad on the Live page
+fw_setenv ptz_control gpio
 fw_setenv ptz_gpio '44 45 46 47 80 79 76 77'
 #
 # Wi-Fi driver profile. The image's /etc/wireless/usb only knows atbm6012b-ssc333-tapo-c110
