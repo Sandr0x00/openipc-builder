@@ -9,6 +9,12 @@ cli -s .nightMode.colorToGray true
 cli -s .audio.speakerPin 61
 cli -s .video0.codec h264
 #
+# Local name (mDNS, answers to openipc.local): off
+cli -s .mdns.enabled false
+#
+# Anonymous telemetry (Majestic's default is on): off
+cli -s .system.telemetry false
+#
 # Pan/tilt: 24BYJ48 steppers driven directly by GPIO (stock: pan A..D = 47 46 45 44,
 # tilt A..D = 80 79 76 77). gpio-motors reads: horizontal x4, then vertical x4.
 fw_setenv ptz_gpio '44 45 46 47 80 79 76 77'
