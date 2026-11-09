@@ -1,0 +1,71 @@
+/etc/sensors/gc2053.bin
+/etc/sensors/gc4023.bin
+/etc/sensors/gc4653.bin
+/etc/sensors/imx307.bin
+/etc/sensors/imx335.bin
+/etc/sensors/jxf37.bin
+/etc/sensors/sc200ai.bin
+/etc/sensors/sc223a.bin
+/etc/sensors/sc2335.bin
+/etc/sensors/sc2336.bin
+#
+/lib/modules/4.9.84/sigmastar/sensor_gc2053_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_gc2083_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_gc4023_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_gc4653_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_imx307_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_imx335_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_jxf37_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_os02g10_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_sc200ai_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_sc2239_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_sc223a_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_sc2335_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_sc2336_mipi.ko
+/lib/modules/4.9.84/sigmastar/sensor_sc3335_mipi.ko
+#
+/lib/modules/4.9.84/kernel/fs/lockd/lockd.ko
+/lib/modules/4.9.84/kernel/fs/nfs/nfs.ko
+/lib/modules/4.9.84/kernel/fs/nfs/nfsv3.ko
+/lib/modules/4.9.84/kernel/fs/nfs_common/grace.ko
+/lib/modules/4.9.84/kernel/net/sunrpc/sunrpc.ko
+#
+# QR-code Wi-Fi setup (this camera sets wlandev/wlanssid via fw_setenv) and its sound
+/usr/bin/qrscan
+/usr/sbin/qrscan.sh
+/etc/init.d/S97qrscan
+/usr/share/openipc/sounds/ready_48k.pcm
+#
+# unreferenced by any shipped script
+/usr/bin/jsonfilter
+#
+# Telegram notifications (sender script and its web UI pages; the motion scripts skip a missing sender)
+/usr/sbin/telegram
+/var/www/cgi-bin/telegram.cgi
+/var/www/cgi-bin/ext-telegram.cgi
+#
+# Services not wanted: WireGuard, SOCKS5 proxy, ntfy, OpenWall (Telegram is listed above)
+/etc/wireguard.conf
+/var/www/cgi-bin/wireguard.cgi
+/var/www/cgi-bin/ext-wireguard.cgi
+/var/www/cgi-bin/proxy.cgi
+/var/www/cgi-bin/ext-proxy.cgi
+/var/www/cgi-bin/ntfy.cgi
+/var/www/cgi-bin/ext-ntfy.cgi
+/usr/bin/ntfy.sh
+/var/www/cgi-bin/openwall.cgi
+/var/www/cgi-bin/ext-openwall.cgi
+/usr/sbin/openwall
+#
+# VPN tunnel (vtun): daemon, helper, init script and web pages
+/usr/sbin/vtund
+/usr/sbin/tunnel
+/etc/init.d/S98vtun
+/var/www/cgi-bin/vtun.cgi
+/var/www/cgi-bin/ext-vtun.cgi
+#
+# Online firmware update from GitHub: update-available banner scripts and the auto-update cron job.
+# The web UI Update page stays (upload of a local build); firmware.sh makes it offline-only.
+/var/www/a/update-check.js
+/var/www/a/fw-changes.js
+/usr/sbin/fw-autoupdate
