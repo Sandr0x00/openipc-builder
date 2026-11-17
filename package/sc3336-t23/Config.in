@@ -1,0 +1,18 @@
+config BR2_PACKAGE_SC3336_T23
+	bool "sc3336-t23"
+	depends on BR2_LINUX_KERNEL
+	select BR2_PACKAGE_INGENIC_OPENSDK
+	help
+	  SmartSens SC3336 (3 MP, MIPI) sensor for Ingenic T23 on the
+	  OpenIPC kernel, which ingenic-osdrv-t23 does not cover.
+
+	  The driver source and the ISP tuning file (sc3336-t23.bin,
+	  format 2.20, same as OpenIPC's other T23 tuning files) come
+	  from thingino's ingenic-sdk (GPL-2.0+); only the includes are
+	  changed so it builds against openingenic's ISP headers.
+
+	  Installs sensor_sc3336_t23.ko, /etc/sensor/sc3336.yaml,
+	  /etc/sensor/sc3336-t23.bin and its module options.
+
+	  Ingenic's sensor prober (sinfo) does not know this chip, so the
+	  device must set "fw_setenv sensor sc3336" for load_ingenic.

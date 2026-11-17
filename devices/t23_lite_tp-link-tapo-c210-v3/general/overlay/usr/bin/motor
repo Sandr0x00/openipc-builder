@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# Web UI PTZ backend (ptz_control=motor): motor <profile> <h> <v>
+# The Live page sends h/v of about -5..5 every 250 ms while a button is held
+# (positive h = right, positive v = up). One call moves ~STEP steps per unit,
+# about one 250 ms slice of travel at 430 steps/s, and returns at once.
+#
+# fw_setenv ptz_flip x|y|xy   reverses an axis if a button moves the wrong way.
+
+STEP=22
+[ $# -eq 3 ] || { echo "usage: $0 <profile> <h> <v>" >&2; exit 2; }
+case "$1" in
+	tmi8152) ;;
+	*) echo "unknown PTZ profile: $1" >&2; exit 2 ;;
+esac
+h=$2; v=$3
+echo "$h" | grep -qE '^-?[0-9]{1,2}$' || h=0
+echo "$v" | grep -qE '^-?[0-9]{1,2}$' || v=0
+case "$(fw_printenv -n ptz_flip 2>/dev/null)" in
+	*x*) h=$((-h)) ;;
+esac
+case "$(fw_printenv -n ptz_flip 2>/dev/null)" in
+	*y*) v=$((-v)) ;;
+esac
+[ "$h" = 0 ] && [ "$v" = 0 ] && exec tmi-ptz -c
+exec tmi-ptz -m $((h * STEP)) $((v * STEP))

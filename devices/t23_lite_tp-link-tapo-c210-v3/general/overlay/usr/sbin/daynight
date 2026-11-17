@@ -1,0 +1,172 @@
+#!/bin/sh
+# daynight - IR-cut + IR-LED day/night controller for the Tapo C210 v3 on OpenIPC
+# (ported from the thingino C210 build; same state machine).
+# (TMI8150/TMI8152 SPI IR-cut chardev + GPIO IR-LED).
+#
+# Colour by default; switch to IR only when the scene is genuinely too dark to
+# give a usable image, and back to colour as soon as there is usable light.
+# No colour-temperature (too noisy under IR), no IR-off sampling blink, no fixed
+# schedule. Two gain metrics, each used only where it stays meaningful:
+#
+#   DAY  -> NIGHT : ISP digital gain (dgain) reaches its ceiling (dark_dgain) -
+#                   the sensor is maxed out, i.e. the scene is truly dark. dgain
+#                   is clean in day mode (IR-cut filter in, LED off).
+#   NIGHT -> DAY : SENSOR analog gain falls below a LEARNED threshold. Under IR,
+#                   dgain floors to ~0 (useless) but analog gain stays elevated
+#                   and drops when real daylight overpowers the IR - a blink-free
+#                   return signal (cf. Vicon gain-hysteresis; analog is used
+#                   because it does not crash under close-range indoor IR).
+#
+# Auto-calibration: the night->day return is tentative - after returning to
+# colour we check dgain (now measurable). If the scene is still too dark the
+# return was premature: revert to IR and LOWER the return threshold. If it is
+# genuinely usable, confirm and relax the threshold up slightly. Each camera
+# converges on the analog level that means "genuinely bright" with no per-unit
+# tuning; the learned value persists to $STATE and survives reboot.
+#
+# Anti-chatter: consecutive-sample debounce on each trigger + a minimum dwell
+# after every switch.
+#
+# Live control (read every poll, so the WebUI changes take effect at once):
+#   $FORCEFILE  auto|day|night  override the whole decision (day = colour/IR off,
+#               night = IR on, auto = automatic). Default = daynight.force / auto.
+#   $CALFILE    1|0             1 = auto-calibrate the return threshold (default);
+#               0 = manual: use $STATE verbatim and never learn/adjust it.
+# The daemon publishes its live state to $STATUS (state/force/cal/thr/dgain/
+# analog) for the WebUI readout. All three files live on the persistent overlay
+# (/etc) except $STATUS, which is transient (/run).
+#
+# OpenIPC port: settings come from /etc/daynight.conf (shell variables, same
+# names as below) instead of thingino.json. Gains are read from the ISP's
+# /proc file when it has the lines thingino's thresholds were tuned on,
+# otherwise from Majestic's /metrics (isp_again/isp_dgain, same raw units on
+# the T23). Majestic does the black-and-white
+# switch through /night/on and /night/off.
+CONF="${CONF:-/etc/daynight.conf}"
+[ -r "$CONF" ] && . "$CONF"
+STATE="${STATE:-/etc/daynight.thr}"
+FORCEFILE="${FORCEFILE:-/etc/daynight.force}"
+CALFILE="${CALFILE:-/etc/daynight.cal}"
+STATUS="${STATUS:-/run/daynight.state}"
+ISP="${ISP:-/proc/jz/isp/isp-m0}"
+IRCUT="${IRCUT:-/dev/tmi8152_ir_cut}"
+IRLED="${IRLED:-49}"                       # ir850 LED gpio (active-low)
+MJ="${MJ:-http://127.0.0.1}"
+FORCE_DEFAULT="${FORCE:-auto}"
+CAL_DEFAULT="${CALIBRATE:-1}"
+DARK_DGAIN="${DARK_DGAIN:-78}"
+ANALOG_INIT="${ANALOG_INIT:-130}"
+ANALOG_MIN="${ANALOG_MIN:-40}"
+ANALOG_MAX="${ANALOG_MAX:-150}"
+STEP_DOWN="${STEP_DOWN:-8}"
+STEP_UP="${STEP_UP:-2}"
+POLL="${POLL:-5}"
+ENTER_DEBOUNCE="${ENTER_DEBOUNCE:-24}"
+EXIT_DEBOUNCE="${EXIT_DEBOUNCE:-24}"
+MIN_DWELL="${MIN_DWELL:-600}"
+CONFIRM_SETTLE="${CONFIRM_SETTLE:-3}"      # polls to let AE settle after a return
+CONFIRM_NEED="${CONFIRM_NEED:-15}"         # consecutive good polls to confirm colour
+
+now(){ cut -d. -f1 /proc/uptime; }
+clampd(){ [ "$1" -lt "$ANALOG_MIN" ] && echo "$ANALOG_MIN" || { [ "$1" -gt "$ANALOG_MAX" ] && echo "$ANALOG_MAX" || echo "$1"; }; }
+save_thr(){ echo "$THR" > "$STATE" 2>/dev/null; }
+read_force(){ f=$(cat "$FORCEFILE" 2>/dev/null); case "$f" in auto|day|night) printf %s "$f";; *) printf %s "$FORCE_DEFAULT";; esac; }
+read_cal(){   c=$(cat "$CALFILE"   2>/dev/null); case "$c" in 0) printf 0;; 1) printf 1;; *) printf %s "$CAL_DEFAULT";; esac; }
+publish(){ echo "state=$state force=$force cal=$cal thr=$THR dgain=$1 analog=$2 t=$(now)" > "$STATUS" 2>/dev/null; }
+led_on(){  gpio clear "$IRLED" >/dev/null 2>&1; }  # active-low: low = on
+led_off(){ gpio set "$IRLED" >/dev/null 2>&1; }    # high = off
+mj_night(){ curl -s -m 2 -o /dev/null "$MJ/night/$1" 2>/dev/null; }   # black-and-white on/off
+day_mode(){   printf 1 > "$IRCUT"; led_off; mj_night off; }    # filter IN  = day/colour
+night_mode(){ printf 0 > "$IRCUT"; led_on;  mj_night on;  }    # filter OUT + IR on = night
+# Majestic forgets the black-and-white state when it restarts: re-assert it
+# every REASSERT polls.
+REASSERT="${REASSERT:-12}"; tick=0
+reassert(){ tick=$((tick+1)); [ "$tick" -ge "$REASSERT" ] || return 0; tick=0
+  if [ "$state" = night ]; then mj_night on; else mj_night off; fi; }
+
+# Majestic may still be starting: wait up to a minute for its HTTP server.
+i=0; while [ $i -lt 30 ] && ! curl -s -m 2 -o /dev/null "$MJ/metrics"; do sleep 2; i=$((i+1)); done
+
+# Pick the gain source only now: the ISP's /proc file only has the gain lines
+# once the sensor is streaming. On the T23, Majestic's isp_again/isp_dgain use
+# the same raw units as /proc, so the thresholds apply to both.
+j=0; while [ $j -lt 15 ] && ! grep -q '^ISP digital gain' "$ISP" 2>/dev/null; do sleep 2; j=$((j+1)); done
+if grep -q '^ISP digital gain' "$ISP" 2>/dev/null && grep -q '^SENSOR analog gain' "$ISP" 2>/dev/null; then
+  SRC=proc
+  dgain(){  awk -F: '/^ISP digital gain/{gsub(/[^0-9]/,"",$2);print $2;exit}' "$ISP" 2>/dev/null; }
+  analog(){ awk -F: '/^SENSOR analog gain/{gsub(/[^0-9]/,"",$2);print $2;exit}' "$ISP" 2>/dev/null; }
+else
+  SRC=metrics
+  metric(){ curl -s -m 2 "$MJ/metrics" 2>/dev/null | awk -v k="$1" '$1==k{print int($2);exit}'; }
+  dgain(){  metric isp_dgain; }
+  analog(){ metric isp_again; }
+fi
+
+THR=$(cat "$STATE" 2>/dev/null); case "$THR" in ''|*[!0-9]*) THR="$ANALOG_INIT";; esac
+THR=$(clampd "$THR")
+day_mode; state=day; dark=0; light=0; last=$(now); confirming=0; settle=0; good=0
+force=$(read_force); cal=$(read_cal); prev_force=auto
+logger -t daynight "started src=$SRC dark_dgain=$DARK_DGAIN learned_thr=$THR dwell=${MIN_DWELL}s force=$force cal=$cal"
+while true; do
+  t=$(now); dwell=$(( t - last ))
+  force=$(read_force); cal=$(read_cal)
+  g=$(dgain); [ -z "$g" ] && g=0
+  a=$(analog); [ -z "$a" ] && a=999
+
+  # --- forced override (live) -------------------------------------------
+  if [ "$force" != auto ]; then
+    if [ "$force" != "$prev_force" ]; then
+      if [ "$force" = night ]; then night_mode; state=night; else day_mode; state=day; fi
+      last=$t; dark=0; light=0; confirming=0
+      logger -t daynight "forced $force"
+    fi
+    prev_force=$force
+    publish "$g" "$a"; reassert
+    sleep "$POLL"; continue
+  fi
+  if [ "$prev_force" != auto ]; then          # just returned to automatic
+    last=$t; dark=0; light=0; confirming=0
+    logger -t daynight "force cleared -> auto (state=$state)"
+  fi
+  prev_force=auto
+
+  # In manual mode the return threshold follows the user's value and is never
+  # learned; in auto mode THR is the in-memory learned value.
+  if [ "$cal" = 0 ]; then
+    m=$(cat "$STATE" 2>/dev/null); case "$m" in ''|*[!0-9]*) ;; *) THR=$(clampd "$m");; esac
+  fi
+
+  if [ "$state" = day ]; then
+    if [ "$confirming" = 1 ]; then
+      if [ "$settle" -gt 0 ]; then settle=$((settle-1))
+      elif [ "$g" -ge "$DARK_DGAIN" ]; then
+        night_mode; state=night; last=$t; confirming=0; light=0
+        if [ "$cal" = 1 ]; then THR=$(clampd $((THR-STEP_DOWN))); save_thr
+          logger -t daynight "return FAILED dgain=$g -> IR, lower thr=$THR"
+        else logger -t daynight "return FAILED dgain=$g -> IR (manual thr=$THR)"; fi
+      else
+        good=$((good+1))
+        if [ "$good" -ge "$CONFIRM_NEED" ]; then
+          confirming=0
+          if [ "$cal" = 1 ]; then THR=$(clampd $((THR+STEP_UP))); save_thr
+            logger -t daynight "return CONFIRMED -> COLOUR, thr=$THR"
+          else logger -t daynight "return CONFIRMED -> COLOUR (manual thr=$THR)"; fi
+        fi
+      fi
+    else
+      if [ "$g" -ge "$DARK_DGAIN" ]; then dark=$((dark+1)); else dark=0; fi
+      if [ "$dark" -ge "$ENTER_DEBOUNCE" ] && [ "$dwell" -ge "$MIN_DWELL" ]; then
+        night_mode; state=night; last=$t; dark=0
+        logger -t daynight "-> NIGHT dgain=$g"
+      fi
+    fi
+  else
+    if [ "$a" -le "$THR" ]; then light=$((light+1)); else light=0; fi
+    if [ "$light" -ge "$EXIT_DEBOUNCE" ] && [ "$dwell" -ge "$MIN_DWELL" ]; then
+      day_mode; state=day; last=$t; light=0; confirming=1; settle=$CONFIRM_SETTLE; good=0
+      logger -t daynight "-> COLOUR tentative analog=$a thr=$THR"
+    fi
+  fi
+  publish "$g" "$a"; reassert
+  sleep "$POLL"
+done

@@ -1,0 +1,22 @@
+From: Tapo-C210 OpenIPC port
+Subject: [PATCH] ir_cut: accept zero-length writes
+
+With musl, `printf 1 > /dev/tmi8152_ir_cut` switches the filter but logs
+"Error copying data from user": the writev() flush also passes an empty
+segment, and the driver copied one byte from it anyway.
+---
+--- a/tmi8152_spi_dev.c	2026-11-16 23:14:22.236312019 +0100
++++ b/tmi8152_spi_dev.c	2026-11-16 23:14:22.263745997 +0100
+@@ -72,6 +72,12 @@
+ 
+     pr_debug("[%s] Writing data to device\n", __func__);
+ 
++    /* musl's stdio flushes with writev(), which can hand the driver an
++     * extra zero-length segment (possibly with a NULL base) after the
++     * real byte. Accept it as a no-op instead of copying from it. */
++    if (count == 0)
++        return 0;
++
+     if (count > 1) {
+         pr_err("[%s] Got %d bytes. Only one byte will be read\n",
+                __func__, count);

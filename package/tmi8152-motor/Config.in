@@ -1,0 +1,20 @@
+config BR2_PACKAGE_TMI8152_MOTOR
+	bool "tmi8152-motor"
+	depends on BR2_LINUX_KERNEL
+	select BR2_PACKAGE_MAJESTIC_WEBUI_PTZ if BR2_PACKAGE_MAJESTIC_WEBUI
+	help
+	  Pan/tilt and IR-cut driver for the TMI8150/TMI8152 SPI stepper
+	  and H-bridge driver (TP-Link Tapo C210 v3, Ingenic T23N), from
+	  https://github.com/sstepansky/tmi8152-spi-dev plus the two fixes
+	  carried by the C210 thingino build (commit the measured position
+	  after a move; tilt inverted by default on the C210).
+
+	  Installs:
+	  - tmi8152_spi_dev.ko: SPI chip driver, /dev/tmi8152_ir_cut
+	    (write '1' = filter in / day, '0' = filter out / night)
+	  - extra/motor.ko: /dev/motor with the Ingenic motor ioctls
+	  - tmi-ptz: small CLI for /dev/motor using this driver's structs
+
+	  Turns on the kernel's SPI0 controller (pins PB27-30), which the
+	  T23 generic kernel config leaves off. The chip is powered by a
+	  board GPIO the device profile has to raise before loading.

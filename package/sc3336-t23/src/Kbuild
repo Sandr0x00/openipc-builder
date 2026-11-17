@@ -1,0 +1,6 @@
+# Out-of-tree build of the SC3336 driver for OpenIPC's T23 ISP (openingenic).
+ccflags-y := -DRELEASE -DUSER_BIT_32 -DKERNEL_BIT_32 -Wno-date-time -D_GNU_SOURCE
+ccflags-y += -I$(ISP_INCLUDE)
+
+obj-m += sensor_sc3336_t23.o
+sensor_sc3336_t23-objs := sc3336.o

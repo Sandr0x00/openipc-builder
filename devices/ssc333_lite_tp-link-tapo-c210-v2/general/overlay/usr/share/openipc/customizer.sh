@@ -6,7 +6,17 @@
 cli -s .nightMode.irCutPin1 78
 cli -s .nightMode.backlightPin 14
 cli -s .nightMode.colorToGray true
+# Automatic day/night, decided by the picture (Majestic's own exposure-based mode).
+# No min/maxThreshold on purpose: they would put it back on the legacy raw-gain
+# switch, which outranks this. See DAYNIGHT.md.
+cli -s .nightMode.lightMonitor true
 cli -s .audio.speakerPin 61
+# Microphone on, speaker off by default (Majestic ships with audio disabled).
+# The speaker amp stays wired to GPIO 61, so it can be switched on in the web UI.
+cli -s .audio.enabled true
+cli -s .audio.outputEnabled false
+# No on-screen text (date/time, name) in the picture by default
+cli -s .osd.enabled false
 cli -s .video0.codec h264
 #
 # Local name (mDNS, answers to openipc.local): off
